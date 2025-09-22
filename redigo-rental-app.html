@@ -1043,7 +1043,7 @@
             <!-- Booking details will be shown here -->
         </div>
         
-        <button onclick="checkApprovalStatus()" class="btn btn-primary">
+        <button onclick="checkBookingStatus()" class="btn btn-primary">
             Check Status
         </button>
     </div>
@@ -1515,11 +1515,92 @@
 
         // Check approval status
         function checkApprovalStatus() {
-            const user = users.find(u => u.phone === currentUser.phone);
-            if (user && user.approved) {
-                showScreen('stationsScreen');
+            const checkBtn = event.target;
+            showLoading(checkBtn);
+            
+            setTimeout(() => {
+                const user = users.find(u => u.phone === currentUser.phone);
+                if (user && user.approved) {
+                    hideLoading(checkBtn, 'Check Status');
+                    showNotification('Your account has been approved! Redirecting to stations...', 'success');
+                    setTimeout(() => {
+                        showScreen('stationsScreen');
+                        updateStationAvailability();
+                    }, 1500);
+                } else {
+                    hideLoading(checkBtn, 'Check Status');
+                    showNotification('Your application is still under review. Please wait for admin approval.', 'warning');
+                }
+            }, 1000);
+        }
+
+        // Check for booking approval status
+        function checkBookingApprovalStatus() {
+            if (currentBooking) {
+                const booking = bookings.find(b => b.id === currentBooking.id);
+                if (booking && booking.status === 'active') {
+                    showNotification('Your booking has been approved! Starting your ride...', 'success');
+                    setTimeout(() => {
+                        loadActiveRide(booking);
+                    }, 1500);
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        // Enhanced check approval status for booking confirmation screen
+        function checkBookingStatus() {
+            const checkBtn = event.target;
+            showLoading(checkBtn);
+            
+            setTimeout(() => {
+                if (checkBookingApprovalStatus()) {
+                    hideLoading(checkBtn, 'Check Status');
+                } else {
+                    hideLoading(checkBtn, 'Check Status');
+                    showNotification('Your booking is still pending admin approval. Please wait...', 'warning');
+                }
+            }, 1000);
+        }
+
+        // Update station availability display
+        function updateStationAvailability() {
+            const sattasaiCount = vehicles.filter(v => v.station === 'sattasai' && v.available).length;
+            const mr13Count = vehicles.filter(v => v.station === 'mr13' && v.available).length;
+            const mr11Count = vehicles.filter(v => v.station === 'mr11' && v.available).length;
+            
+            document.getElementById('sattasaiCount').textContent = `${sattasaiCount} vehicles available`;
+            document.getElementById('mr13Count').textContent = `${mr13Count} vehicles available`;
+            document.getElementById('mr11Count').textContent = `${mr11Count} vehicles available`;
+            
+            // Update card states
+            const sattasaiCard = document.getElementById('sattasaiCard');
+            const mr13Card = document.getElementById('mr13Card');
+            const mr11Card = document.getElementById('mr11Card');
+            
+            if (sattasaiCount === 0) {
+                sattasaiCard.classList.add('unavailable');
+                document.getElementById('sattasaiCount').classList.add('zero');
             } else {
-                alert('Your application is still under review. Please wait for admin approval.');
+                sattasaiCard.classList.remove('unavailable');
+                document.getElementById('sattasaiCount').classList.remove('zero');
+            }
+            
+            if (mr13Count === 0) {
+                mr13Card.classList.add('unavailable');
+                document.getElementById('mr13Count').classList.add('zero');
+            } else {
+                mr13Card.classList.remove('unavailable');
+                document.getElementById('mr13Count').classList.remove('zero');
+            }
+            
+            if (mr11Count === 0) {
+                mr11Card.classList.add('unavailable');
+                document.getElementById('mr11Count').classList.add('zero');
+            } else {
+                mr11Card.classList.remove('unavailable');
+                document.getElementById('mr11Count').classList.remove('zero');
             }
         }
 
@@ -1527,13 +1608,15 @@
         function selectStation(stationId) {
             selectedStation = stationId;
             
-            if (stationId === 'sattasai') {
-                const availableVehicles = vehicles.filter(v => v.station === stationId && v.available);
-                displayVehicles(availableVehicles);
-                showScreen('vehiclesScreen');
-            } else {
-                alert('No vehicles available at this station currently. Please select Sattasai Square.');
+            const availableVehicles = vehicles.filter(v => v.station === stationId && v.available);
+            
+            if (availableVehicles.length === 0) {
+                showNotification('No vehicles available at this station currently. Please try another station or check back later.', 'warning');
+                return;
             }
+            
+            displayVehicles(availableVehicles);
+            showScreen('vehiclesScreen');
         }
 
         // Display vehicles
@@ -1541,9 +1624,17 @@
             const container = document.getElementById('vehiclesList');
             container.innerHTML = '';
             
+            if (vehicleList.length === 0) {
+                container.innerHTML = '<div style="text-align: center; padding: 50px; color: #666;">No vehicles available at this station</div>';
+                return;
+            }
+            
             vehicleList.forEach(vehicle => {
                 const vehicleCard = document.createElement('div');
                 vehicleCard.className = 'vehicle-card';
+                if (!vehicle.available) {
+                    vehicleCard.classList.add('unavailable');
+                }
                 vehicleCard.onclick = () => selectVehicle(vehicle);
                 
                 vehicleCard.innerHTML = `
@@ -1551,6 +1642,9 @@
                     <div class="vehicle-info">
                         <h4>${vehicle.name}</h4>
                         <p>${vehicle.number}</p>
+                        <p style="color: ${vehicle.available ? '#4caf50' : '#f44336'}; font-weight: bold; font-size: 0.9em;">
+                            ${vehicle.available ? '✅ Available' : '❌ In Use'}
+                        </p>
                     </div>
                 `;
                 
@@ -2042,6 +2136,18 @@
                     showNotification('User approved successfully!', 'success');
                     loadUserApprovals();
                     loadDashboardData();
+                    
+                    // Auto-redirect user if they're currently waiting
+                    if (currentUser && currentUser.phone === phone && 
+                        document.getElementById('waitingScreen').classList.contains('hidden') === false) {
+                        setTimeout(() => {
+                            showNotification('Your account has been approved! Redirecting to stations...', 'success');
+                            setTimeout(() => {
+                                showScreen('stationsScreen');
+                                updateStationAvailability();
+                            }, 1500);
+                        }, 1000);
+                    }
                 }
             }
         }
@@ -2064,6 +2170,7 @@
             if (confirm('Approve this booking and start the ride?')) {
                 const bookingIndex = bookings.findIndex(b => b.id === bookingId);
                 if (bookingIndex !== -1) {
+                    const booking = bookings[bookingIndex];
                     bookings[bookingIndex].status = 'active';
                     bookings[bookingIndex].startTime = new Date().toISOString();
                     saveToLocalStorage('redigo_bookings', bookings);
@@ -2071,6 +2178,19 @@
                     showNotification('Booking approved! Ride started.', 'success');
                     loadBookingApprovals();
                     loadDashboardData();
+                    
+                    // Auto-redirect user if they're currently waiting for booking approval
+                    if (currentUser && currentUser.phone === booking.userPhone && 
+                        (document.getElementById('bookingConfirmScreen').classList.contains('hidden') === false ||
+                         document.getElementById('waitingScreen').classList.contains('hidden') === false)) {
+                        setTimeout(() => {
+                            showNotification('Your booking has been approved! Starting your ride...', 'success');
+                            setTimeout(() => {
+                                currentBooking = booking;
+                                loadActiveRide(booking);
+                            }, 1500);
+                        }, 1000);
+                    }
                 }
             }
         }
@@ -2187,6 +2307,9 @@
         document.addEventListener('DOMContentLoaded', () => {
             showScreen('loginScreen');
             
+            // Update station availability on load
+            updateStationAvailability();
+            
             // Auto logout after 30 minutes of inactivity (except during active rides)
             let inactivityTimer;
             function resetInactivityTimer() {
@@ -2202,6 +2325,32 @@
             document.addEventListener('click', resetInactivityTimer);
             document.addEventListener('keypress', resetInactivityTimer);
             resetInactivityTimer();
+            
+            // Auto-check for approvals every 10 seconds when user is waiting
+            setInterval(() => {
+                // Check if user is on waiting screen and check for approval
+                if (!document.getElementById('waitingScreen').classList.contains('hidden') && currentUser && !currentUser.isAdmin) {
+                    const user = users.find(u => u.phone === currentUser.phone);
+                    if (user && user.approved) {
+                        showNotification('Your account has been approved! Redirecting to stations...', 'success');
+                        setTimeout(() => {
+                            showScreen('stationsScreen');
+                            updateStationAvailability();
+                        }, 1500);
+                    }
+                }
+                
+                // Check if user is on booking confirmation screen and check for booking approval
+                if (!document.getElementById('bookingConfirmScreen').classList.contains('hidden') && currentBooking) {
+                    const booking = bookings.find(b => b.id === currentBooking.id);
+                    if (booking && booking.status === 'active') {
+                        showNotification('Your booking has been approved! Starting your ride...', 'success');
+                        setTimeout(() => {
+                            loadActiveRide(booking);
+                        }, 1500);
+                    }
+                }
+            }, 10000); // Check every 10 seconds
         });
 
         // Handle browser back button
